@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build backend test container
+        run: docker build --target dev -t backend-test:latest ./backend
+
+      - name: Run backend tests inside container
+        run: |
+          docker run --rm \
+            -e APP_ENV=testing \
+            -e APP_KEY=base64:dcQ5f+eL8HZZa1z6Vq4G8tFw4m1t4sKqN1Y8g4x8Z0k= \
+            -e DB_CONNECTION=sqlite \
+            -e DB_DATABASE=:memory: \
+            -v "$GITHUB_WORKSPACE/backend:/var/www/html" \
+            -w /var/www/html \
+            backend-test:latest \
+            sh -c "composer install --no-interaction --prefer-dist && php artisan test"
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build frontend test container
+        run: docker build --target dev -t frontend-test:latest ./frontend
+
+      - name: Run frontend build inside container
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/frontend:/app" \
+            -w /app \
+            frontend-test:latest \
+            sh -c "npm ci && npm run build"
+
+  deploy:
+    name: deploy
+    needs: [backend-test, frontend-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute repository lowercase
+        id: repo
+        run: echo "image_prefix=ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push backend production image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          target: production
+          push: true
+          tags: ${{ steps.repo.outputs.image_prefix }}/backend:${{ github.sha }}
+
+      - name: Build and push frontend production image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          target: production
+          push: true
+          tags: ${{ steps.repo.outputs.image_prefix }}/frontend:${{ github.sha }}
