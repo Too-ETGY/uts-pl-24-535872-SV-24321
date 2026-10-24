@@ -2,8 +2,9 @@ agent_docs/
 
 # Environment
 .env
-.env.*
-!.env.example
+.env.local
+.env.*.local
+
 
 # Dependencies
 vendor/
