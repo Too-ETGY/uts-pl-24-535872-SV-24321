@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Note;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class NoteController extends Controller
 {
@@ -33,6 +34,14 @@ class NoteController extends Controller
         ]);
 
         $note = $request->user()->notes()->create($validated);
+
+        Log::info('Note created successfully', [
+            'event' => 'note_created',
+            'user_id' => $request->user()->id,
+            'note_id' => $note->id,
+            'title_length' => mb_strlen($note->title),
+            'content_length' => mb_strlen($note->content),
+        ]);
 
         return response()->json($note, 201);
     }
